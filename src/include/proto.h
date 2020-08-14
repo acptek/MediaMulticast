@@ -37,6 +37,7 @@ struct msg_channel_st{
 // 节目数据 // 表示节目单中的一条记录
 struct msg_listentry_st{
     chnid_t chnid;
+    uint16_t len;
     uint8_t desc[1]; // 变长
 }__attribute__((packed));
 

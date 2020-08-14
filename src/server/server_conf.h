@@ -1,0 +1,20 @@
+#ifndef SERVER_CONF_H__
+#define SERVER_CONF_H__
+
+#define DEFAULT_MEDIADIR        "/var/media"
+#define DEFAULT_IF              "eth0"
+
+enum{
+    RUN_DAEMON = 1,
+    RUN_FOREGROUND
+};
+
+struct server_conf_st{
+    char *rcvport;
+    char *mgroup;
+    char *media_dir;
+    char runmode; // 指定前后台运行
+    char *ifname; // 网络接口
+};
+
+#endif

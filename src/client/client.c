@@ -6,11 +6,11 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <net/if.h>
+#include <asm/errno.h>
+#include <errno.h>
 #include "client.h"
 #include "../include/proto.h"
 // #include <proto.h>
-
-#define DEFAULT_PLAYERCMD   "/usr/bin/mpg123 > /dev/null"
 
 /**
  * 命令行格式
@@ -35,6 +35,22 @@ static void printhelp(){
     printf("-M --mgroup\tassign multicast group\n");
     printf("-p --player\tassign player command\n");
     printf("-H --help  \tshow help\n");
+}
+
+static ssize_t writen(int fd, const char *buf, size_t len){
+    int pos = 0;
+    while(len > 0) {
+        ssize_t ret = write(fd, buf+pos, len);
+        if (ret < 0) {
+            if (errno == EINTR)
+                continue;
+            perror("write()");
+            return -1;
+        }
+        len -= ret;
+        pos += ret;
+    }
+    return pos;
 }
 
 int main(int argc, char **argv)
@@ -131,17 +147,95 @@ int main(int argc, char **argv)
     }
 
     if(pid == 0){
+        // 子进程从管道读数据
+        close(sfd);
+        close(pd[1]);
+
+        dup2(pd[0], 0);
+        if(pd[0] > 0)
+            close(pd[0]);
+
         // 调用解码器
-        exit(0);
+        execl("/bin/sh", "sh", "-c", client_conf.player_cmd, NULL); // 直接借助shell来解析命令行
+        perror("execl()");
+        exit(1);
     }
 
-    // 从网络接收数据发送给子进程
-
+    // 父进程从网络接收数据发送给子进程
     // 接收节目单
+    struct msg_list_st *msg_list;
+    struct sockaddr_in raddr;
+    socklen_t raddr_len;
 
-    // 选择频道
+    msg_list = malloc(MSG_LIST_MAX);
+    if(msg_list == NULL){
+        perror("malloc()");
+        exit(1);
+    }
+
+    ssize_t len;
+    while (1) {
+        len = recvfrom(sfd, msg_list, MSG_LIST_MAX, 0, (void *) &raddr, &raddr_len);
+        if (len < sizeof(struct msg_list_st)) {
+            fprintf(stderr, "message is too small. \n");
+            continue;
+        }
+        if(msg_list->chnid != LISTCHNID){
+            fprintf(stderr, "chnid is not match. \n");
+            continue;
+        }
+        break;
+    }
+
+
+    // 打印节目单，选择频道
+    int chooseid;
+    struct msg_listentry_st *pos;
+    for(pos = msg_list->entry; (char *)pos < ((char *)msg_list + len); pos = (void*)(((char *) pos) + ntohs(pos->len))){
+        printf("channel %d : %s\n", pos->chnid, pos->desc);
+    }
+    free(msg_list);
+
+    if(scanf("%d", &chooseid) != 1){
+        exit(1);
+    }
+
 
     // 接收频道，发送给子进程
+    struct sockaddr_in raddr_chn;
+    socklen_t raddr_chn_len;
+    ssize_t chn_len;
+    struct msg_channel_st *msg_channel;
+    msg_channel = malloc(MSG_CHANNEL_MAX);
+    if(msg_channel == NULL){
+        perror("malloc()");
+        exit(1);
+    }
+
+    while (1) {
+        chn_len = recvfrom(sfd, msg_channel, MSG_CHANNEL_MAX, 0, (void *)&raddr_chn, &raddr_chn_len);
+        if(raddr_chn.sin_addr.s_addr != raddr.sin_addr.s_addr
+        || raddr_chn.sin_port != raddr.sin_port){
+            fprintf(stderr, "Ignore: address mot match. \n");
+            continue;
+        }
+
+        if(len < sizeof(struct msg_channel_st)){
+            fprintf(stderr, "Ignore: message too small. \n");
+            continue;
+        }
+
+        if(msg_channel->chnid == chooseid){
+            fprintf(stdout, "Accepted msg: %d received. \n", msg_channel->chnid);
+            if(writen(pd[1], msg_channel->data, chn_len-sizeof(chnid_t)) < 0){
+                exit(1);
+            }
+        }
+    }
+
+    // 放到信号处理函数
+    free(msg_channel);
+    close(sfd);
 
     exit(0);
 }
