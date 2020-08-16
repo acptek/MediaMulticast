@@ -220,11 +220,13 @@ int main(int argc, char **argv)
             continue;
         }
 
+        // 接收到报文的最小长度
         if(len < sizeof(struct msg_channel_st)){
             fprintf(stderr, "Ignore: message too small. \n");
             continue;
         }
 
+        // 从接收到的数据中选择需要的频道数据写入管道
         if(msg_channel->chnid == chooseid){
             fprintf(stdout, "Accepted msg: %d received. \n", msg_channel->chnid);
             if(writen(pd[1], msg_channel->data, chn_len-sizeof(chnid_t)) < 0){
