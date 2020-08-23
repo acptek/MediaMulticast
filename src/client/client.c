@@ -212,11 +212,12 @@ int main(int argc, char **argv)
         exit(1);
     }
 
+    raddr_chn_len = sizeof(raddr);
     while (1) {
         chn_len = recvfrom(sfd, msg_channel, MSG_CHANNEL_MAX, 0, (void *)&raddr_chn, &raddr_chn_len);
         if(raddr_chn.sin_addr.s_addr != raddr.sin_addr.s_addr
         || raddr_chn.sin_port != raddr.sin_port){
-            fprintf(stderr, "Ignore: address mot match. \n");
+            fprintf(stderr, "Ignore: address not match. \n");
             continue;
         }
 

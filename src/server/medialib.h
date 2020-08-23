@@ -11,13 +11,12 @@ struct mlib_listentry_st {
 
 int mlib_getchnlist(struct mlib_listentry_st **, int *);
 
-int mlib_freechnlist(struct  mlib_freechnlist *);
+int mlib_freechnlist(struct  mlib_listentry_st *);
 
 /*
  * 获取频道信息
- * 读取频道chnid中size_t字节数据到void*位置，返回读到的字节数
+ * 读取频道chnid_t中size_t字节数据到void*位置，返回读到的字节数
  */
 ssize_t mlib_readchn(chnid_t, void *, size_t);
-
 
 #endif

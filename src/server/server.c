@@ -17,6 +17,10 @@
 #include "thr_list.h"
 #include "thr_channel.h"
 
+int serversd;
+struct sockaddr_in sndaddr;
+static struct mlib_listentry_st *list;
+
 struct server_conf_st server_conf = {
         .rcvport = DEFAULT_RCVPORT,
         .mgroup = DEFAULT_MGROUP,
@@ -24,8 +28,6 @@ struct server_conf_st server_conf = {
         .runmode = RUN_DAEMON,
         .ifname = DEFAULT_IF
 };
-
-extern struct server_conf_st server_conf;
 
 static void printhelp(){
     printf("-M\tassign multicast group\n");
@@ -38,6 +40,11 @@ static void printhelp(){
 
 static void daemon_exit(int s){
 
+    thr_list_destroy();
+    thr_channel_destroyall();
+    mlib_freechnlist(list);
+
+    syslog(LOG_WARNING, "signal-%d caught, exit now", s);
     closelog();
 
     exit(0);
@@ -75,9 +82,9 @@ static int daemonize(){
     return 0;
 }
 
-static void socket_init(){
-    int sfd = socket(AF_INET, SOCK_DGRAM, 0);
-    if(sfd < 0){
+static int socket_init(){
+    serversd = socket(AF_INET, SOCK_DGRAM, 0);
+    if(serversd < 0){
         syslog(LOG_ERR, "socket() : %s", strerror(errno));
         exit(1);
     }
@@ -87,12 +94,16 @@ static void socket_init(){
     inet_pton(AF_INET, "0.0.0.0", &mreq.imr_address);
     mreq.imr_ifindex = if_nametoindex(server_conf.ifname);
 
-    if(setsockopt(sfd, IPPROTO_IP, IP_MULTICAST_IF, &mreq, sizeof(mreq)) < 0){
+    if(setsockopt(serversd, IPPROTO_IP, IP_MULTICAST_IF, &mreq, sizeof(mreq)) < 0){
         syslog(LOG_ERR, "setsockopt() : %s", strerror(errno));
         exit(1);
     }
 
     // bind();
+    sndaddr.sin_family = AF_INET;
+    sndaddr.sin_port = htons(atoi(server_conf.rcvport));
+    inet_pton(AF_INET, server_conf.mgroup, &sndaddr.sin_addr);
+    return 0;
 }
 
 int main(int argc, char **argv)
@@ -102,7 +113,7 @@ int main(int argc, char **argv)
 
     // 设置信号处理
     struct sigaction sa;
-    sa.sa_handler = daemon_exit();
+    sa.sa_handler = daemon_exit;
     sigemptyset(&sa.sa_mask);
     sigaddset(&sa.sa_mask, SIGINT);
     sigaddset(&sa.sa_mask, SIGQUIT);
@@ -180,12 +191,11 @@ int main(int argc, char **argv)
      * 获取频道信息
      * (调用媒体库函数 medialib.h）
      * */
-    struct mlib_listentry_st *list;
     int list_size;
 
     int err = mlib_getchnlist(&list, &list_size);
     if(err < 0){
-
+        exit(1);
     }
 
     /*
@@ -194,16 +204,21 @@ int main(int argc, char **argv)
      * */
     err = thr_list_create(list, list_size);
     if(err < 0){
-
+        exit(1);
     }
 
     /*
      * 创建频道线程
      * (thr_channel.h)
+     * 一个线程对应一个频道
      * */
-    for(int i = 0; i < list_size; ++i){
-        thr_channel_create(list+i);
-        /*if error*/
+    int i;
+    for(i = 0; i < list_size; ++i){
+        err = thr_channel_create(list+i);
+        if(err){
+            fprintf(stderr, "thr_channel_create(): %s", strerror(err));
+            exit(1);
+        }
     }
     syslog(LOG_DEBUG, "%d channel threads created .", i);
 

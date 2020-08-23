@@ -17,4 +17,8 @@ struct server_conf_st{
     char *ifname; // 网络接口
 };
 
+extern struct server_conf_st server_conf;
+extern int serversd;
+extern struct sockaddr_in sndaddr;
+
 #endif
